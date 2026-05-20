@@ -11,7 +11,7 @@ IssueHub runs as a Docker Compose stack:
 - `frontend` serves the React SPA.
 - `api` serves the HTTP API, health checks, metrics, and upload/download endpoints.
 - `worker` processes PostgreSQL-backed jobs.
-- `postgres` stores application data and the job queue. The IssueHub Postgres image includes first-run init scripts for the base schema and bootstrap admin user.
+- `postgres` stores application data and the job queue.
 
 The production server should pull already published images from GHCR. It should not build application images locally.
 
@@ -21,10 +21,9 @@ Default production images:
 ghcr.io/<owner>/issuehub-api:latest
 ghcr.io/<owner>/issuehub-worker:latest
 ghcr.io/<owner>/issuehub-frontend:latest
-ghcr.io/<owner>/issuehub-postgres:latest
 ```
 
-Use a release tag instead of `latest` when you need a pinned deployment or rollback. If you use a pinned tag, keep the same tag for `api`, `worker`, `frontend`, and `postgres`.
+Use a release tag instead of `latest` when you need a pinned deployment or rollback. If you use a pinned tag, keep the same tag for `api`, `worker`, and `frontend`.
 
 ## 1. Server Requirements
 
@@ -42,7 +41,7 @@ Only Traefik should publish host ports. Do not publish `api`, `frontend`, `worke
 
 ## 2. Install Files
 
-The server needs the production Compose file, Traefik config, and `.env.example`. PostgreSQL init scripts are part of the `issuehub-postgres` image and do not need to be mounted from the host.
+The server needs the production Compose file, Traefik config, and `.env.example`. IssueHub schema migrations and the bootstrap admin user are handled by the API on startup, so PostgreSQL init scripts do not need to be mounted from the host.
 
 ```bash
 mkdir -p /opt/issuehub

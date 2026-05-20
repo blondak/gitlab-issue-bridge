@@ -1,15 +1,55 @@
 use anyhow::Context;
-use bridge_core::{config::AppConfig, secrets::{encrypt_secret, ensure_secret_encryption_key_ready}};
+use bridge_core::{
+    config::AppConfig,
+    secrets::{encrypt_secret, ensure_secret_encryption_key_ready},
+};
 use sqlx::{migrate::Migrator, PgPool, Row};
+use tracing::info;
 use uuid::Uuid;
 
 pub static MIGRATOR: Migrator = sqlx::migrate!("../../migrations");
 
 pub async fn migrate_and_backfill(pool: &PgPool, config: &AppConfig) -> anyhow::Result<()> {
     MIGRATOR.run(pool).await.context("failed to run SQL migrations")?;
+    ensure_bootstrap_admin(pool).await?;
     ensure_secret_encryption_key_ready(pool, config).await?;
     backfill_encrypted_gitlab_secrets(pool, config).await?;
     Ok(())
+}
+
+async fn ensure_bootstrap_admin(pool: &PgPool) -> anyhow::Result<()> {
+    let email = env_string("INIT_ADMIN_EMAIL", "admin@example.com");
+    let password = env_string("INIT_ADMIN_PASSWORD", "admin1234");
+    let full_name = env_string("INIT_ADMIN_FULL_NAME", "Default Admin");
+
+    sqlx::query(
+        r#"
+        INSERT INTO users (email, full_name, password_hash, is_admin, active)
+        VALUES ($1, $2, crypt($3, gen_salt('bf')), TRUE, TRUE)
+        ON CONFLICT (email) DO UPDATE
+        SET full_name = EXCLUDED.full_name,
+            is_admin = TRUE,
+            active = TRUE,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(&email)
+    .bind(&full_name)
+    .bind(&password)
+    .execute(pool)
+    .await
+    .context("failed to ensure bootstrap admin user")?;
+
+    info!("bootstrap admin ensured for {}", email);
+    Ok(())
+}
+
+fn env_string(key: &str, default_value: &str) -> String {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| default_value.to_string())
 }
 
 async fn backfill_encrypted_gitlab_secrets(pool: &PgPool, config: &AppConfig) -> anyhow::Result<()> {
@@ -74,7 +114,7 @@ async fn backfill_encrypted_gitlab_secrets(pool: &PgPool, config: &AppConfig) ->
 mod tests {
     use sqlx::PgPool;
 
-    use super::MIGRATOR;
+    use super::{env_string, migrate_and_backfill, MIGRATOR};
 
     #[sqlx::test(migrations = false)]
     async fn migrator_creates_base_schema_on_clean_database(pool: PgPool) {
@@ -109,5 +149,33 @@ mod tests {
 
         assert!(user_table_exists);
         assert!(worker_heartbeats_table_exists);
+    }
+
+    #[sqlx::test(migrations = false)]
+    async fn migrate_and_backfill_bootstraps_admin_user(pool: PgPool) {
+        let expected_email = env_string("INIT_ADMIN_EMAIL", "admin@example.com");
+        let expected_password = env_string("INIT_ADMIN_PASSWORD", "admin1234");
+
+        migrate_and_backfill(&pool, &bridge_core::config::AppConfig::default())
+            .await
+            .unwrap();
+
+        let row = sqlx::query_as::<_, (String, bool, bool, bool)>(
+            r#"
+            SELECT email,
+                   is_admin,
+                   active,
+                   password_hash = crypt($2, password_hash) AS password_ok
+            FROM users
+            WHERE email = $1
+            "#,
+        )
+        .bind(&expected_email)
+        .bind(&expected_password)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(row, (expected_email, true, true, true));
     }
 }

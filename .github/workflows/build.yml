@@ -34,10 +34,6 @@ jobs:
             context: ./frontend
             dockerfile: frontend/Dockerfile
             cache_scope: frontend
-          - name: postgres
-            context: ./infra/postgres
-            dockerfile: infra/postgres/Dockerfile
-            cache_scope: postgres
 
     steps:
       - name: Checkout
