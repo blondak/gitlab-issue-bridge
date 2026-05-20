@@ -1,0 +1,27 @@
+name: Compose Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Docker Compose smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare environment
+        run: cp .env.example .env
+
+      - name: Run smoke test
+        run: ISSUEHUB_SMOKE_SECURITY_LIMITS=1 SMOKE_START_STACK=1 ./scripts/smoke-compose.sh
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail=200
+
+      - name: Stop stack
+        if: always()
+        run: docker compose down --volumes --remove-orphans

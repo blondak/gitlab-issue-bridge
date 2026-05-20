@@ -1,0 +1,26 @@
+http:
+  routers:
+    issuehub-api:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/api-docs`) || PathPrefix(`/metrics`)
+      service: issuehub-api
+      priority: 100
+
+    issuehub-frontend:
+      entryPoints:
+        - web
+      rule: PathPrefix(`/`)
+      service: issuehub-frontend
+      priority: 1
+
+  services:
+    issuehub-api:
+      loadBalancer:
+        servers:
+          - url: http://api:8080
+
+    issuehub-frontend:
+      loadBalancer:
+        servers:
+          - url: http://frontend:80

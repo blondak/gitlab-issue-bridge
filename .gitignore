@@ -1,0 +1,15 @@
+# Build outputs and dependency caches
+target/
+node_modules/
+dist/
+.test-dist/
+*.tsbuildinfo
+
+# Local runtime data
+.data/
+
+# Local environment and secret files
+.env*
+!.env.example
+.gitlab-tokens
+

@@ -1,0 +1,130 @@
+# Produkční compose — používá obrazy z GHCR, žádný build na serveru.
+# Použití: docker compose -f docker-compose.prod.yml up -d
+#
+# Vyžaduje soubor .env se skutečnými hodnotami (viz .env.example).
+
+services:
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/traefik/dynamic.prod.yml:/etc/traefik/dynamic.yml:ro
+      - letsencrypt:/letsencrypt
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ${POSTGRES_DATA_DIR:-/var/lib/issuehub/postgres}:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/issuehub-api:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:               postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RUST_LOG:                   ${RUST_LOG:-warn}
+      API_PORT:                   8080
+      FRONTEND_ORIGIN:            ${FRONTEND_ORIGIN}
+      PUBLIC_FRONTEND_URL:        ${PUBLIC_FRONTEND_URL}
+      SECRET_ENCRYPTION_KEY:      ${SECRET_ENCRYPTION_KEY}
+      ATTACHMENTS_DATA_DIR:       /var/lib/issuehub/attachments
+      ATTACHMENT_CACHE_DIR:       ${ATTACHMENT_CACHE_DIR:-/var/cache/issuehub/gitlab-attachments}
+      TEMP_UPLOAD_RETENTION_HOURS: ${TEMP_UPLOAD_RETENTION_HOURS:-24}
+      WORKER_HEARTBEAT_INTERVAL_SECONDS: ${WORKER_HEARTBEAT_INTERVAL_SECONDS:-15}
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-60}
+      QUEUE_STALE_AFTER_SECONDS: ${QUEUE_STALE_AFTER_SECONDS:-300}
+      SESSION_COOKIE_SECURE:      ${SESSION_COOKIE_SECURE:-true}
+      DEBUG:                      ${DEBUG:-false}
+      REQUIRE_SECRET_ENCRYPTION_KEY: ${REQUIRE_SECRET_ENCRYPTION_KEY:-true}
+      RATE_LIMIT_ENABLED:         ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_WINDOW_SECONDS:  ${RATE_LIMIT_WINDOW_SECONDS:-900}
+      RATE_LIMIT_LOGIN_PER_EMAIL: ${RATE_LIMIT_LOGIN_PER_EMAIL:-5}
+      RATE_LIMIT_LOGIN_PER_IP:    ${RATE_LIMIT_LOGIN_PER_IP:-50}
+      RATE_LIMIT_PASSWORD_RECOVERY_PER_EMAIL: ${RATE_LIMIT_PASSWORD_RECOVERY_PER_EMAIL:-3}
+      RATE_LIMIT_PASSWORD_RECOVERY_PER_IP: ${RATE_LIMIT_PASSWORD_RECOVERY_PER_IP:-20}
+      RATE_LIMIT_INVITATION_RESEND_PER_ADMIN: ${RATE_LIMIT_INVITATION_RESEND_PER_ADMIN:-10}
+      RATE_LIMIT_UPLOADS_PER_USER: ${RATE_LIMIT_UPLOADS_PER_USER:-60}
+      UPLOAD_MAX_BYTES:           ${UPLOAD_MAX_BYTES:-10485760}
+      UPLOAD_ALLOWED_CONTENT_TYPES: ${UPLOAD_ALLOWED_CONTENT_TYPES:-image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/csv,application/json,application/zip}
+      SMTP_HOST:                  ${SMTP_HOST}
+      SMTP_PORT:                  ${SMTP_PORT:-587}
+      SMTP_USERNAME:              ${SMTP_USERNAME}
+      SMTP_PASSWORD:              ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL:            ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME:             ${SMTP_FROM_NAME:-IssueHub}
+      SMTP_STARTTLS:              ${SMTP_STARTTLS:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ${ATTACHMENTS_HOST_DIR:-/var/lib/issuehub/attachments}:/var/lib/issuehub/attachments
+
+  worker:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/issuehub-worker:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL:               postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RUST_LOG:                   ${RUST_LOG:-warn}
+      PUBLIC_FRONTEND_URL:        ${PUBLIC_FRONTEND_URL}
+      SECRET_ENCRYPTION_KEY:      ${SECRET_ENCRYPTION_KEY}
+      ATTACHMENTS_DATA_DIR:       /var/lib/issuehub/attachments
+      ATTACHMENT_CACHE_DIR:       ${ATTACHMENT_CACHE_DIR:-/var/cache/issuehub/gitlab-attachments}
+      TEMP_UPLOAD_RETENTION_HOURS: ${TEMP_UPLOAD_RETENTION_HOURS:-24}
+      WORKER_HEARTBEAT_INTERVAL_SECONDS: ${WORKER_HEARTBEAT_INTERVAL_SECONDS:-15}
+      WORKER_STALE_AFTER_SECONDS: ${WORKER_STALE_AFTER_SECONDS:-60}
+      QUEUE_STALE_AFTER_SECONDS: ${QUEUE_STALE_AFTER_SECONDS:-300}
+      SESSION_COOKIE_SECURE:      ${SESSION_COOKIE_SECURE:-true}
+      DEBUG:                      ${DEBUG:-false}
+      REQUIRE_SECRET_ENCRYPTION_KEY: ${REQUIRE_SECRET_ENCRYPTION_KEY:-true}
+      RATE_LIMIT_ENABLED:         ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_WINDOW_SECONDS:  ${RATE_LIMIT_WINDOW_SECONDS:-900}
+      RATE_LIMIT_LOGIN_PER_EMAIL: ${RATE_LIMIT_LOGIN_PER_EMAIL:-5}
+      RATE_LIMIT_LOGIN_PER_IP:    ${RATE_LIMIT_LOGIN_PER_IP:-50}
+      RATE_LIMIT_PASSWORD_RECOVERY_PER_EMAIL: ${RATE_LIMIT_PASSWORD_RECOVERY_PER_EMAIL:-3}
+      RATE_LIMIT_PASSWORD_RECOVERY_PER_IP: ${RATE_LIMIT_PASSWORD_RECOVERY_PER_IP:-20}
+      RATE_LIMIT_INVITATION_RESEND_PER_ADMIN: ${RATE_LIMIT_INVITATION_RESEND_PER_ADMIN:-10}
+      RATE_LIMIT_UPLOADS_PER_USER: ${RATE_LIMIT_UPLOADS_PER_USER:-60}
+      UPLOAD_MAX_BYTES:           ${UPLOAD_MAX_BYTES:-10485760}
+      UPLOAD_ALLOWED_CONTENT_TYPES: ${UPLOAD_ALLOWED_CONTENT_TYPES:-image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/csv,application/json,application/zip}
+      SMTP_HOST:                  ${SMTP_HOST}
+      SMTP_PORT:                  ${SMTP_PORT:-587}
+      SMTP_USERNAME:              ${SMTP_USERNAME}
+      SMTP_PASSWORD:              ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL:            ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME:             ${SMTP_FROM_NAME:-IssueHub}
+      SMTP_STARTTLS:              ${SMTP_STARTTLS:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ${ATTACHMENTS_HOST_DIR:-/var/lib/issuehub/attachments}:/var/lib/issuehub/attachments
+
+  frontend:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/issuehub-frontend:latest
+    restart: unless-stopped
+    depends_on:
+      - api
+
+volumes:
+  letsencrypt:

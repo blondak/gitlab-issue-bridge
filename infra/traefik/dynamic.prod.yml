@@ -1,0 +1,41 @@
+http:
+  routers:
+    issuehub-api:
+      entryPoints: [websecure]
+      rule: "Host(`${DOMAIN}`) && (PathPrefix(`/api`) || PathPrefix(`/health`) || PathPrefix(`/api-docs`) || PathPrefix(`/metrics`))"
+      service: issuehub-api
+      priority: 100
+      tls:
+        certResolver: le
+
+    issuehub-frontend:
+      entryPoints: [websecure]
+      rule: "Host(`${DOMAIN}`)"
+      service: issuehub-frontend
+      priority: 1
+      tls:
+        certResolver: le
+
+    # HTTP → HTTPS redirect
+    redirect-to-https:
+      entryPoints: [web]
+      rule: "Host(`${DOMAIN}`)"
+      middlewares: [redirect-https]
+      service: issuehub-frontend
+
+  middlewares:
+    redirect-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  services:
+    issuehub-api:
+      loadBalancer:
+        servers:
+          - url: http://api:8080
+
+    issuehub-frontend:
+      loadBalancer:
+        servers:
+          - url: http://frontend:80

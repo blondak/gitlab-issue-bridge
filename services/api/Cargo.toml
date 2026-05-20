@@ -1,0 +1,20 @@
+[package]
+name = "issuehub-api"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+anyhow.workspace = true
+axum = { version = "0.8", features = ["macros", "multipart"] }
+bridge-core = { path = "../../crates/bridge-core" }
+chrono.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
