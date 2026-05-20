@@ -1,7 +1,7 @@
-# Produkční compose — používá obrazy z GHCR, žádný build na serveru.
-# Použití: docker compose -f docker-compose.prod.yml up -d
+# Production compose uses images from GHCR and does not build on the server.
+# Usage: docker compose -f docker-compose.prod.yml up -d
 #
-# Vyžaduje soubor .env se skutečnými hodnotami (viz .env.example).
+# Requires a .env file with real values. See .env.example.
 
 services:
   traefik:
@@ -23,15 +23,17 @@ services:
       - letsencrypt:/letsencrypt
 
   postgres:
-    image: postgres:16-alpine
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/issuehub-postgres:latest
     restart: unless-stopped
     environment:
       POSTGRES_DB:       ${POSTGRES_DB}
       POSTGRES_USER:     ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      INIT_ADMIN_EMAIL:  ${INIT_ADMIN_EMAIL}
+      INIT_ADMIN_PASSWORD: ${INIT_ADMIN_PASSWORD}
+      INIT_ADMIN_FULL_NAME: ${INIT_ADMIN_FULL_NAME:-Default Admin}
     volumes:
       - ${POSTGRES_DATA_DIR:-/var/lib/issuehub/postgres}:/var/lib/postgresql/data
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s

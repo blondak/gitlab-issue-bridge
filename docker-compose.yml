@@ -12,7 +12,9 @@ services:
       - ./infra/traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
 
   postgres:
-    image: postgres:16-alpine
+    build:
+      context: ./infra/postgres
+      dockerfile: Dockerfile
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-issue_bridge}
       POSTGRES_USER: ${POSTGRES_USER:-issue_bridge}
@@ -22,7 +24,6 @@ services:
       INIT_ADMIN_FULL_NAME: ${INIT_ADMIN_FULL_NAME:-Default Admin}
     volumes:
       - ${POSTGRES_DATA_DIR:-./.data/postgres}:/var/lib/postgresql/data
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-issue_bridge} -d ${POSTGRES_DB:-issue_bridge}"]
       interval: 5s
