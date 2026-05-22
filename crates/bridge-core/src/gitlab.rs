@@ -1,8 +1,14 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context};
 use chrono::{DateTime, Utc};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Deserialize;
 use tokio::fs;
+
+use crate::integrations::{
+    CreateExternalComment, CreateExternalIssue, ExternalAttachmentUpload, ExternalComment,
+    ExternalIssue, ExternalValidationResult, IntegrationProvider, IssueTrackerAdapter,
+    ProjectIntegrationConfig, UpdateExternalIssue, UploadExternalAttachment,
+};
 
 #[derive(Debug, Clone)]
 pub struct GitLabValidationInput {
@@ -101,6 +107,138 @@ pub struct GitLabUploadAttachmentResult {
     pub url: String,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GitLabAdapter;
+
+impl IssueTrackerAdapter for GitLabAdapter {
+    fn provider(&self) -> IntegrationProvider {
+        IntegrationProvider::GitLab
+    }
+
+    async fn validate(
+        &self,
+        config: &ProjectIntegrationConfig,
+    ) -> anyhow::Result<ExternalValidationResult> {
+        let input = gitlab_validation_input(config)?;
+        validate_integration(input).await.map(Into::into)
+    }
+
+    async fn import_issues(
+        &self,
+        config: &ProjectIntegrationConfig,
+    ) -> anyhow::Result<Vec<ExternalIssue>> {
+        let input = gitlab_issue_import_input(config)?;
+        let issues = import_project_issues(input).await?;
+        Ok(issues.into_iter().map(Into::into).collect())
+    }
+
+    async fn fetch_issue(
+        &self,
+        config: &ProjectIntegrationConfig,
+        external_issue_id: &str,
+    ) -> anyhow::Result<ExternalIssue> {
+        let input = gitlab_issue_import_input(config)?;
+        let issue = crate::gitlab::fetch_issue(input, parse_gitlab_issue_iid(external_issue_id)?).await?;
+        Ok(issue.into_summary().into())
+    }
+
+    async fn create_issue(
+        &self,
+        config: &ProjectIntegrationConfig,
+        input: CreateExternalIssue,
+    ) -> anyhow::Result<ExternalIssue> {
+        let project_id = gitlab_project_id(config)?;
+        let issue = create_project_issue(GitLabCreateIssueInput {
+            gitlab_api_base_url: config.api_base_url.clone(),
+            gitlab_project_id: project_id,
+            token: config.token.clone(),
+            verify_tls: config.verify_tls,
+            title: input.title,
+            description: input.description,
+        })
+        .await?;
+
+        Ok(issue.into())
+    }
+
+    async fn update_issue(
+        &self,
+        config: &ProjectIntegrationConfig,
+        external_issue_id: &str,
+        input: UpdateExternalIssue,
+    ) -> anyhow::Result<ExternalIssue> {
+        let project_id = gitlab_project_id(config)?;
+        let issue = update_project_issue(GitLabUpdateIssueInput {
+            gitlab_api_base_url: config.api_base_url.clone(),
+            gitlab_project_id: project_id,
+            gitlab_issue_iid: parse_gitlab_issue_iid(external_issue_id)?,
+            token: config.token.clone(),
+            verify_tls: config.verify_tls,
+            title: input.title,
+            description: input.description,
+            state_event: input.state_event,
+        })
+        .await?;
+
+        Ok(issue.into())
+    }
+
+    async fn import_comments(
+        &self,
+        config: &ProjectIntegrationConfig,
+        external_issue_id: &str,
+    ) -> anyhow::Result<Vec<ExternalComment>> {
+        let input = gitlab_issue_import_input(config)?;
+        let comments = import_issue_comments(input, parse_gitlab_issue_iid(external_issue_id)?).await?;
+        Ok(comments.into_iter().map(Into::into).collect())
+    }
+
+    async fn create_comment(
+        &self,
+        config: &ProjectIntegrationConfig,
+        input: CreateExternalComment,
+    ) -> anyhow::Result<ExternalComment> {
+        let project_id = gitlab_project_id(config)?;
+        let comment = create_issue_comment(GitLabCreateIssueCommentInput {
+            gitlab_api_base_url: config.api_base_url.clone(),
+            gitlab_project_id: project_id,
+            gitlab_issue_iid: parse_gitlab_issue_iid(&input.external_issue_id)?,
+            token: config.token.clone(),
+            verify_tls: config.verify_tls,
+            body: input.body,
+            discussion_id: input.discussion_id,
+            reply_to_note_id: input
+                .reply_to_external_id
+                .as_deref()
+                .map(parse_gitlab_note_id)
+                .transpose()?,
+        })
+        .await?;
+
+        Ok(comment.into())
+    }
+
+    async fn upload_attachment(
+        &self,
+        config: &ProjectIntegrationConfig,
+        input: UploadExternalAttachment,
+    ) -> anyhow::Result<ExternalAttachmentUpload> {
+        let project_id = gitlab_project_id(config)?;
+        let upload = upload_project_attachment(GitLabUploadAttachmentInput {
+            gitlab_api_base_url: config.api_base_url.clone(),
+            gitlab_project_id: project_id,
+            token: config.token.clone(),
+            verify_tls: config.verify_tls,
+            file_path: input.file_path,
+            filename: input.filename,
+            content_type: input.content_type,
+        })
+        .await?;
+
+        Ok(ExternalAttachmentUpload { url: upload.url })
+    }
+}
+
 pub async fn validate_integration(input: GitLabValidationInput) -> anyhow::Result<GitLabValidationResult> {
     let project = fetch_project(input).await?;
 
@@ -109,6 +247,88 @@ pub async fn validate_integration(input: GitLabValidationInput) -> anyhow::Resul
         web_url: project.web_url,
         visibility: project.visibility,
     })
+}
+
+impl From<GitLabValidationResult> for ExternalValidationResult {
+    fn from(value: GitLabValidationResult) -> Self {
+        Self {
+            project_name: value.project_name,
+            web_url: value.web_url,
+            visibility: value.visibility,
+        }
+    }
+}
+
+impl From<GitLabIssueSummary> for ExternalIssue {
+    fn from(value: GitLabIssueSummary) -> Self {
+        Self {
+            provider: IntegrationProvider::GitLab,
+            external_id: value.iid.to_string(),
+            external_key: Some(format!("#{}", value.iid)),
+            title: value.title,
+            description: value.description,
+            state: value.state,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+impl From<GitLabIssueCommentSummary> for ExternalComment {
+    fn from(value: GitLabIssueCommentSummary) -> Self {
+        Self {
+            provider: IntegrationProvider::GitLab,
+            external_id: value.note_id.to_string(),
+            discussion_id: value.discussion_id,
+            reply_to_external_id: value.reply_to_note_id.map(|note_id| note_id.to_string()),
+            author_external_id: value.author_external_id,
+            author_name: value.author_name,
+            body_raw: value.body_raw,
+            system_note: value.system_note,
+            created_at: value.created_at,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+fn gitlab_validation_input(config: &ProjectIntegrationConfig) -> anyhow::Result<GitLabValidationInput> {
+    Ok(GitLabValidationInput {
+        gitlab_api_base_url: config.api_base_url.clone(),
+        gitlab_project_id: gitlab_project_id(config)?,
+        token: config.token.clone(),
+        verify_tls: config.verify_tls,
+    })
+}
+
+fn gitlab_issue_import_input(config: &ProjectIntegrationConfig) -> anyhow::Result<GitLabIssueImportInput> {
+    Ok(GitLabIssueImportInput {
+        gitlab_api_base_url: config.api_base_url.clone(),
+        gitlab_project_id: gitlab_project_id(config)?,
+        token: config.token.clone(),
+        verify_tls: config.verify_tls,
+    })
+}
+
+fn gitlab_project_id(config: &ProjectIntegrationConfig) -> anyhow::Result<i64> {
+    if config.provider != IntegrationProvider::GitLab {
+        return Err(anyhow!("GitLab adapter cannot handle {} integration", config.provider));
+    }
+
+    config.external_project_id_as_i64()
+}
+
+fn parse_gitlab_issue_iid(value: &str) -> anyhow::Result<i64> {
+    value
+        .trim_start_matches('#')
+        .parse::<i64>()
+        .map_err(|error| anyhow!("invalid GitLab issue iid {value}: {error}"))
+}
+
+fn parse_gitlab_note_id(value: &str) -> anyhow::Result<i64> {
+    value
+        .trim_start_matches('#')
+        .parse::<i64>()
+        .map_err(|error| anyhow!("invalid GitLab note id {value}: {error}"))
 }
 
 pub async fn fetch_issue_web_url(

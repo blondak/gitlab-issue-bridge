@@ -55,7 +55,7 @@ pub async fn upsert_gitlab_issue_row(
     .await
     .context("failed to upsert issue row")?;
 
-    sqlx::query_scalar::<_, Uuid>(
+    let issue_id = sqlx::query_scalar::<_, Uuid>(
         r#"
         SELECT id
         FROM issues
@@ -67,7 +67,67 @@ pub async fn upsert_gitlab_issue_row(
     .bind(issue.iid)
     .fetch_one(pool)
     .await
-    .context("failed to resolve upserted issue id")
+    .context("failed to resolve upserted issue id")?;
+
+    upsert_issue_external_ref(
+        pool,
+        issue_id,
+        project_id,
+        "gitlab",
+        &issue.iid.to_string(),
+        Some(&format!("#{}", issue.iid)),
+        None,
+        "idle",
+    )
+    .await?;
+
+    Ok(issue_id)
+}
+
+pub async fn upsert_issue_external_ref(
+    pool: &PgPool,
+    issue_id: Uuid,
+    project_id: Uuid,
+    provider: &str,
+    external_issue_id: &str,
+    external_issue_key: Option<&str>,
+    external_url: Option<&str>,
+    sync_state: &str,
+) -> Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO issue_external_refs (
+            issue_id,
+            project_id,
+            provider,
+            external_issue_id,
+            external_issue_key,
+            external_url,
+            sync_state
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (issue_id, provider)
+        DO UPDATE SET
+            project_id = EXCLUDED.project_id,
+            external_issue_id = EXCLUDED.external_issue_id,
+            external_issue_key = EXCLUDED.external_issue_key,
+            external_url = EXCLUDED.external_url,
+            sync_state = EXCLUDED.sync_state,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(issue_id)
+    .bind(project_id)
+    .bind(provider)
+    .bind(external_issue_id)
+    .bind(external_issue_key)
+    .bind(external_url)
+    .bind(sync_state)
+    .execute(pool)
+    .await
+    .context("failed to upsert issue external ref")?;
+
+    Ok(())
 }
 
 pub async fn persist_gitlab_issue_attachments(

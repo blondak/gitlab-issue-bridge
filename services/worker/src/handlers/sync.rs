@@ -5,7 +5,10 @@ use bridge_core::{
         create_project_issue, fetch_issue, import_issue_comments, import_project_issues,
         update_project_issue, GitLabCreateIssueInput, GitLabIssueImportInput, GitLabUpdateIssueInput,
     },
-    issue_sync::{persist_gitlab_comment_and_attachments, persist_gitlab_issue_attachments, upsert_gitlab_issue_row},
+    issue_sync::{
+        persist_gitlab_comment_and_attachments, persist_gitlab_issue_attachments,
+        upsert_gitlab_issue_row, upsert_issue_external_ref,
+    },
     secrets::decrypt_secret,
 };
 use chrono::{Duration, Utc};
@@ -293,6 +296,19 @@ async fn handle_sync_push(state: &WorkerState, job: &Job) -> Result<()> {
         .execute(&state.pool)
         .await
         .context("failed to update issue after GitLab creation in sync.push")?;
+
+        upsert_issue_external_ref(
+            &state.pool,
+            issue.id,
+            issue.project_id,
+            "gitlab",
+            &gitlab_issue.iid.to_string(),
+            Some(&format!("#{}", gitlab_issue.iid)),
+            None,
+            "idle",
+        )
+        .await
+        .context("failed to update issue external ref after GitLab creation in sync.push")?;
 
         persist_gitlab_issue_attachments(&state.pool, issue.id, &integration.gitlab_base_url, &gitlab_issue.description)
             .await

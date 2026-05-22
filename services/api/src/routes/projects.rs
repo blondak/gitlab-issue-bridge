@@ -222,11 +222,51 @@ pub async fn upsert_gitlab_integration(
         "#,
     )
     .bind(project_id)
-    .bind(request.gitlab_base_url)
-    .bind(request.gitlab_api_base_url)
+    .bind(&request.gitlab_base_url)
+    .bind(&request.gitlab_api_base_url)
     .bind(request.gitlab_project_id)
-    .bind(token_encrypted)
-    .bind(webhook_secret_encrypted)
+    .bind(&token_encrypted)
+    .bind(&webhook_secret_encrypted)
+    .bind(request.verify_tls)
+    .bind(request.sync_enabled)
+    .execute(state.pool.as_ref())
+    .await
+    .map_err(internal_error)?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO project_integrations (
+            project_id,
+            provider,
+            base_url,
+            api_base_url,
+            external_project_id,
+            token_encrypted,
+            webhook_secret_encrypted,
+            verify_tls,
+            sync_enabled,
+            settings
+        )
+        VALUES ($1, 'gitlab', $2, $3, $4, $5, $6, $7, $8, jsonb_build_object('legacy_table', 'project_gitlab_integrations'))
+        ON CONFLICT (project_id, provider)
+        DO UPDATE SET
+            base_url = EXCLUDED.base_url,
+            api_base_url = EXCLUDED.api_base_url,
+            external_project_id = EXCLUDED.external_project_id,
+            token_encrypted = EXCLUDED.token_encrypted,
+            webhook_secret_encrypted = EXCLUDED.webhook_secret_encrypted,
+            verify_tls = EXCLUDED.verify_tls,
+            sync_enabled = EXCLUDED.sync_enabled,
+            settings = EXCLUDED.settings,
+            updated_at = NOW()
+        "#,
+    )
+    .bind(project_id)
+    .bind(&request.gitlab_base_url)
+    .bind(&request.gitlab_api_base_url)
+    .bind(request.gitlab_project_id.to_string())
+    .bind(&token_encrypted)
+    .bind(&webhook_secret_encrypted)
     .bind(request.verify_tls)
     .bind(request.sync_enabled)
     .execute(state.pool.as_ref())
@@ -562,6 +602,18 @@ pub async fn delete_gitlab_integration(
             "GitLab integration not found",
         ));
     }
+
+    sqlx::query(
+        r#"
+        DELETE FROM project_integrations
+        WHERE project_id = $1
+          AND provider = 'gitlab'
+        "#,
+    )
+    .bind(project_id)
+    .execute(state.pool.as_ref())
+    .await
+    .map_err(internal_error)?;
 
     Ok(StatusCode::NO_CONTENT)
 }

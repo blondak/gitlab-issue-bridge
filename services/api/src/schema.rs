@@ -146,9 +146,37 @@ mod tests {
         .fetch_one(&pool)
         .await
         .unwrap();
+        let project_integrations_table_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'project_integrations'
+            )
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        let issue_external_refs_table_exists = sqlx::query_scalar::<_, bool>(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = 'issue_external_refs'
+            )
+            "#,
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
         assert!(user_table_exists);
         assert!(worker_heartbeats_table_exists);
+        assert!(project_integrations_table_exists);
+        assert!(issue_external_refs_table_exists);
     }
 
     #[sqlx::test(migrations = false)]
