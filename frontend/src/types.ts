@@ -361,6 +361,8 @@ export type UserAccessProjectPermission = {
 export type UserAccessIssuePermission = {
   issue_id: string;
   issue_title: string;
+  gitlab_issue_iid: number;
+  project_id: string;
   project_name: string;
   permission: string;
 };
@@ -370,15 +372,28 @@ export type UserAccessProjectOption = {
   project_name: string;
 };
 
+export type UserAccessIssueOption = {
+  issue_id: string;
+  issue_title: string;
+  gitlab_issue_iid: number;
+  project_id: string;
+  project_name: string;
+};
+
 export type UserAccessOverview = {
   project_permissions: UserAccessProjectPermission[];
   issue_permissions: UserAccessIssuePermission[];
   available_projects: UserAccessProjectOption[];
+  available_issues: UserAccessIssueOption[];
 };
 
 export type UpdateUserAccessValues = {
   project_permissions: Array<{
     project_id: string;
+    permission: string;
+  }>;
+  issue_permissions?: Array<{
+    issue_id: string;
     permission: string;
   }>;
 };

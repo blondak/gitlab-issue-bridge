@@ -13,6 +13,7 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
@@ -316,20 +317,24 @@ export function UsersPage() {
                             />
                           </Table.Td>
                           <Table.Td>
-                            <Switch
-                              checked={draft?.is_admin ?? false}
-                              disabled={adminSwitchDisabled}
-                              onChange={(event) => {
-                                const isAdmin = event.currentTarget.checked;
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [user.id]: {
-                                    ...(current[user.id] ?? userToDraft(user)),
-                                    is_admin: isAdmin,
-                                  },
-                                }));
-                              }}
-                            />
+                            <Tooltip label={t('users.selfAdminWarning')} disabled={!adminSwitchDisabled} withArrow>
+                              <span>
+                                <Switch
+                                  checked={draft?.is_admin ?? false}
+                                  disabled={adminSwitchDisabled}
+                                  onChange={(event) => {
+                                    const isAdmin = event.currentTarget.checked;
+                                    setDrafts((current) => ({
+                                      ...current,
+                                      [user.id]: {
+                                        ...(current[user.id] ?? userToDraft(user)),
+                                        is_admin: isAdmin,
+                                      },
+                                    }));
+                                  }}
+                                />
+                              </span>
+                            </Tooltip>
                           </Table.Td>
                           <Table.Td>
                             <Badge color={draft?.is_admin ? 'teal' : 'gray'} variant="light">
@@ -337,20 +342,24 @@ export function UsersPage() {
                             </Badge>
                           </Table.Td>
                           <Table.Td>
-                            <Switch
-                              checked={draft?.active ?? false}
-                              disabled={activeSwitchDisabled}
-                              onChange={(event) => {
-                                const active = event.currentTarget.checked;
-                                setDrafts((current) => ({
-                                  ...current,
-                                  [user.id]: {
-                                    ...(current[user.id] ?? userToDraft(user)),
-                                    active,
-                                  },
-                                }));
-                              }}
-                            />
+                            <Tooltip label={t('users.selfAdminWarning')} disabled={!activeSwitchDisabled} withArrow>
+                              <span>
+                                <Switch
+                                  checked={draft?.active ?? false}
+                                  disabled={activeSwitchDisabled}
+                                  onChange={(event) => {
+                                    const active = event.currentTarget.checked;
+                                    setDrafts((current) => ({
+                                      ...current,
+                                      [user.id]: {
+                                        ...(current[user.id] ?? userToDraft(user)),
+                                        active,
+                                      },
+                                    }));
+                                  }}
+                                />
+                              </span>
+                            </Tooltip>
                           </Table.Td>
                           <Table.Td>
                             <Text size="sm" c="dimmed">
@@ -359,28 +368,25 @@ export function UsersPage() {
                           </Table.Td>
                           <Table.Td>
                             <Stack gap={4} align="flex-end">
-                              <Button
-                                size="xs"
-                                loading={savingUserId === user.id}
-                                onClick={() => void handleUserSave(user)}
-                              >
-                                {t('users.saveUser')}
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="light"
-                                onClick={() => {
-                                  setAccessUserId(user.id);
-                                  setAccessUserEmail(user.email);
-                                }}
-                              >
-                                {t('users.access')}
-                              </Button>
-                              {isCurrentAdmin ? (
-                                <Text size="xs" c="dimmed" ta="right">
-                                  {t('users.selfAdminWarning')}
-                                </Text>
-                              ) : null}
+                              <Group gap="xs" justify="flex-end" wrap="nowrap">
+                                <Button
+                                  size="xs"
+                                  loading={savingUserId === user.id}
+                                  onClick={() => void handleUserSave(user)}
+                                >
+                                  {t('users.saveUser')}
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="light"
+                                  onClick={() => {
+                                    setAccessUserId(user.id);
+                                    setAccessUserEmail(user.email);
+                                  }}
+                                >
+                                  {t('users.access')}
+                                </Button>
+                              </Group>
                             </Stack>
                           </Table.Td>
                         </Table.Tr>
@@ -516,7 +522,7 @@ export function UsersPage() {
         onClose={() => setAccessUserId(null)}
         title={`${t('users.drawerTitle')}: ${accessUserEmail}`}
         position="right"
-        size="lg"
+        size="min(920px, 96vw)"
         padding="md"
       >
         {accessUserId ? <UserAccessPanel userId={accessUserId} /> : null}

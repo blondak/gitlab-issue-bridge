@@ -27,14 +27,14 @@ const issuePermissionColors: Record<string, string> = {
 export function getProjectPermissionOptions(t: T) {
   return projectPermissionKeys.map((permission) => ({
     value: permission,
-    label: `${t(`permissions.project.${permission}.label`)} - ${t(`permissions.project.${permission}.summary`)}`,
+    label: t(`permissions.project.${permission}.label`),
   }));
 }
 
 export function getIssuePermissionOptions(t: T) {
   return issuePermissionKeys.map((permission) => ({
     value: permission,
-    label: `${t(`permissions.issue.${permission}.label`)} - ${t(`permissions.issue.${permission}.summary`)}`,
+    label: t(`permissions.issue.${permission}.label`),
   }));
 }
 

@@ -601,6 +601,8 @@ pub struct UserAccessProjectPermissionRow {
 pub struct UserAccessIssuePermissionRow {
     pub issue_id: Uuid,
     pub issue_title: String,
+    pub gitlab_issue_iid: i64,
+    pub project_id: Uuid,
     pub project_name: String,
     pub permission: String,
 }
@@ -611,11 +613,21 @@ pub struct UserAccessProjectOptionDto {
     pub project_name: String,
 }
 
+#[derive(Debug, Serialize, FromRow)]
+pub struct UserAccessIssueOptionDto {
+    pub issue_id: Uuid,
+    pub issue_title: String,
+    pub gitlab_issue_iid: i64,
+    pub project_id: Uuid,
+    pub project_name: String,
+}
+
 #[derive(Debug, Serialize)]
 pub struct UserAccessOverviewDto {
     pub project_permissions: Vec<UserAccessProjectPermissionRow>,
     pub issue_permissions: Vec<UserAccessIssuePermissionRow>,
     pub available_projects: Vec<UserAccessProjectOptionDto>,
+    pub available_issues: Vec<UserAccessIssueOptionDto>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -625,8 +637,16 @@ pub struct UpdateUserProjectAccessEntry {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdateUserIssueAccessEntry {
+    pub issue_id: Uuid,
+    pub permission: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct UpdateUserAccessRequest {
     pub project_permissions: Vec<UpdateUserProjectAccessEntry>,
+    #[serde(default)]
+    pub issue_permissions: Option<Vec<UpdateUserIssueAccessEntry>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -97,6 +97,13 @@ export function ProjectsPage() {
   const isCreateRoute = location.pathname === '/projects/new';
   const isDetailRoute = Boolean(projectId) && !isCreateRoute;
   const selectedProject = manageableProjects.find((project) => project.id === projectId) ?? null;
+  const selectedProjectWebhookUrl = useMemo(() => {
+    if (!selectedProject || typeof window === 'undefined') {
+      return undefined;
+    }
+
+    return `${window.location.origin}/api/v1/gitlab/webhooks/${selectedProject.id}`;
+  }, [selectedProject?.id]);
   const sortedProjects = useMemo(() => {
     const query = search.trim().toLowerCase();
     const filtered = manageableProjects.filter((project) =>
@@ -446,6 +453,7 @@ export function ProjectsPage() {
             validationResult={validationResult}
             importResult={importResult}
             canManageExistingIntegration={Boolean(selectedProject.gitlab_integration)}
+            webhookUrl={selectedProjectWebhookUrl}
             onSubmit={handleUpdate}
             onValidate={handleValidate}
             onImport={handleImport}

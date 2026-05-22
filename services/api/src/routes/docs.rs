@@ -764,6 +764,76 @@ pub async fn openapi_spec(State(state): State<AppState>) -> Json<Value> {
             }
           }
         },
+        "/api/v1/users/{user_id}/access": {
+          "get": {
+            "tags": ["Users"],
+            "summary": "Admin view of project and direct issue access for one user",
+            "security": [{ "sessionCookie": [] }],
+            "parameters": [
+              {
+                "name": "user_id",
+                "in": "path",
+                "required": true,
+                "schema": { "type": "string", "format": "uuid" }
+              }
+            ],
+            "responses": {
+              "200": {
+                "description": "User access overview",
+                "content": {
+                  "application/json": {
+                    "schema": { "$ref": "#/components/schemas/UserAccessOverview" }
+                  }
+                }
+              },
+              "401": { "$ref": "#/components/responses/UnauthorizedError" },
+              "403": { "$ref": "#/components/responses/ForbiddenError" },
+              "404": { "$ref": "#/components/responses/NotFoundError" }
+            }
+          },
+          "put": {
+            "tags": ["Users"],
+            "summary": "Admin replace of project and direct issue access for one user",
+            "security": [{ "sessionCookie": [] }],
+            "parameters": [
+              {
+                "name": "user_id",
+                "in": "path",
+                "required": true,
+                "schema": { "type": "string", "format": "uuid" }
+              }
+            ],
+            "requestBody": {
+              "required": true,
+              "content": {
+                "application/json": {
+                  "schema": { "$ref": "#/components/schemas/UpdateUserAccessRequest" }
+                }
+              }
+            },
+            "responses": {
+              "200": {
+                "description": "Updated user access overview",
+                "content": {
+                  "application/json": {
+                    "schema": { "$ref": "#/components/schemas/UserAccessOverview" }
+                  }
+                }
+              },
+              "400": {
+                "description": "Invalid access assignment payload",
+                "content": {
+                  "application/json": {
+                    "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+                  }
+                }
+              },
+              "401": { "$ref": "#/components/responses/UnauthorizedError" },
+              "403": { "$ref": "#/components/responses/ForbiddenError" },
+              "404": { "$ref": "#/components/responses/NotFoundError" }
+            }
+          }
+        },
         "/api/v1/users/invitations": {
           "post": {
             "tags": ["Users"],
@@ -1587,6 +1657,96 @@ pub async fn openapi_spec(State(state): State<AppState>) -> Json<Value> {
               "full_name": { "type": "string" },
               "is_admin": { "type": "boolean" },
               "active": { "type": "boolean" }
+            }
+          },
+          "UserAccessProjectPermission": {
+            "type": "object",
+            "required": ["project_id", "project_name", "permission"],
+            "properties": {
+              "project_id": { "type": "string", "format": "uuid" },
+              "project_name": { "type": "string" },
+              "permission": { "type": "string", "example": "view" }
+            }
+          },
+          "UserAccessIssuePermission": {
+            "type": "object",
+            "required": ["issue_id", "issue_title", "gitlab_issue_iid", "project_id", "project_name", "permission"],
+            "properties": {
+              "issue_id": { "type": "string", "format": "uuid" },
+              "issue_title": { "type": "string" },
+              "gitlab_issue_iid": { "type": "integer", "example": 42 },
+              "project_id": { "type": "string", "format": "uuid" },
+              "project_name": { "type": "string" },
+              "permission": { "type": "string", "example": "comment" }
+            }
+          },
+          "UserAccessProjectOption": {
+            "type": "object",
+            "required": ["project_id", "project_name"],
+            "properties": {
+              "project_id": { "type": "string", "format": "uuid" },
+              "project_name": { "type": "string" }
+            }
+          },
+          "UserAccessIssueOption": {
+            "type": "object",
+            "required": ["issue_id", "issue_title", "gitlab_issue_iid", "project_id", "project_name"],
+            "properties": {
+              "issue_id": { "type": "string", "format": "uuid" },
+              "issue_title": { "type": "string" },
+              "gitlab_issue_iid": { "type": "integer", "example": 42 },
+              "project_id": { "type": "string", "format": "uuid" },
+              "project_name": { "type": "string" }
+            }
+          },
+          "UserAccessOverview": {
+            "type": "object",
+            "required": ["project_permissions", "issue_permissions", "available_projects", "available_issues"],
+            "properties": {
+              "project_permissions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/UserAccessProjectPermission" }
+              },
+              "issue_permissions": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/UserAccessIssuePermission" }
+              },
+              "available_projects": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/UserAccessProjectOption" }
+              },
+              "available_issues": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/UserAccessIssueOption" }
+              }
+            }
+          },
+          "UpdateUserAccessRequest": {
+            "type": "object",
+            "required": ["project_permissions"],
+            "properties": {
+              "project_permissions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["project_id", "permission"],
+                  "properties": {
+                    "project_id": { "type": "string", "format": "uuid" },
+                    "permission": { "type": "string", "example": "create_issue" }
+                  }
+                }
+              },
+              "issue_permissions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["issue_id", "permission"],
+                  "properties": {
+                    "issue_id": { "type": "string", "format": "uuid" },
+                    "permission": { "type": "string", "example": "comment" }
+                  }
+                }
+              }
             }
           },
           "CreateInvitationRequest": {

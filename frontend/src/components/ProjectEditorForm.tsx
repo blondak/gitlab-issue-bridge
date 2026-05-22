@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Checkbox,
+  CopyButton,
   Divider,
   Grid,
   Group,
@@ -32,6 +33,7 @@ type ProjectEditorFormProps = {
   validationResult?: GitLabIntegrationValidationResult | null;
   importResult?: GitLabIssueImportResult | null;
   canManageExistingIntegration?: boolean;
+  webhookUrl?: string;
   onSubmit: (values: ProjectEditorValues) => Promise<void> | void;
   onValidate?: (values: ProjectEditorValues) => Promise<void> | void;
   onImport?: () => Promise<void> | void;
@@ -49,6 +51,7 @@ export function ProjectEditorForm({
   validationResult,
   importResult,
   canManageExistingIntegration,
+  webhookUrl,
   onSubmit,
   onValidate,
   onImport,
@@ -132,52 +135,79 @@ export function ProjectEditorForm({
               </Group>
 
               {form.values.enable_gitlab_integration ? (
-                <Grid>
-                  <Grid.Col span={{ base: 12, md: 6 }}>
-                    <TextInput
-                      label={t('projects.gitlabBaseUrl')}
-                      placeholder="https://gitlab.example.com"
-                      {...form.getInputProps('gitlab_base_url')}
-                      required
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 6 }}>
-                    <TextInput
-                      label={t('projects.gitlabApiBaseUrl')}
-                      placeholder="https://gitlab.example.com/api/v4"
-                      {...form.getInputProps('gitlab_api_base_url')}
-                      required
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 4 }}>
-                    <TextInput
-                      label={t('projects.gitlabProjectId')}
-                      placeholder="12345"
-                      {...form.getInputProps('gitlab_project_id')}
-                      required
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 4 }}>
-                    <PasswordInput
-                      label={t('projects.token')}
-                      placeholder={canManageExistingIntegration ? t('projects.tokenRotatePlaceholder') : 'glpat-...'}
-                      {...form.getInputProps('token')}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 4 }}>
-                    <PasswordInput
-                      label={t('projects.webhookSecret')}
-                      placeholder={canManageExistingIntegration ? t('projects.secretRotatePlaceholder') : 'secret'}
-                      {...form.getInputProps('webhook_secret')}
-                    />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 3 }}>
-                    <Checkbox mt="xl" label={t('projects.verifyTls')} {...form.getInputProps('verify_tls', { type: 'checkbox' })} />
-                  </Grid.Col>
-                  <Grid.Col span={{ base: 12, md: 3 }}>
-                    <Checkbox mt="xl" label={t('projects.syncEnabled')} {...form.getInputProps('sync_enabled', { type: 'checkbox' })} />
-                  </Grid.Col>
-                </Grid>
+                <Stack gap="md">
+                  <Grid>
+                    <Grid.Col span={{ base: 12, md: 6 }}>
+                      <TextInput
+                        label={t('projects.gitlabBaseUrl')}
+                        placeholder="https://gitlab.example.com"
+                        {...form.getInputProps('gitlab_base_url')}
+                        required
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 6 }}>
+                      <TextInput
+                        label={t('projects.gitlabApiBaseUrl')}
+                        placeholder="https://gitlab.example.com/api/v4"
+                        {...form.getInputProps('gitlab_api_base_url')}
+                        required
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 4 }}>
+                      <TextInput
+                        label={t('projects.gitlabProjectId')}
+                        placeholder="12345"
+                        {...form.getInputProps('gitlab_project_id')}
+                        required
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 4 }}>
+                      <PasswordInput
+                        label={t('projects.token')}
+                        placeholder={canManageExistingIntegration ? t('projects.tokenRotatePlaceholder') : 'glpat-...'}
+                        {...form.getInputProps('token')}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 4 }}>
+                      <PasswordInput
+                        label={t('projects.webhookSecret')}
+                        placeholder={canManageExistingIntegration ? t('projects.secretRotatePlaceholder') : 'secret'}
+                        {...form.getInputProps('webhook_secret')}
+                      />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 3 }}>
+                      <Checkbox mt="xl" label={t('projects.verifyTls')} {...form.getInputProps('verify_tls', { type: 'checkbox' })} />
+                    </Grid.Col>
+                    <Grid.Col span={{ base: 12, md: 3 }}>
+                      <Checkbox mt="xl" label={t('projects.syncEnabled')} {...form.getInputProps('sync_enabled', { type: 'checkbox' })} />
+                    </Grid.Col>
+                  </Grid>
+
+                  {webhookUrl ? (
+                    <Alert color="blue" variant="light" title={t('projects.gitlabSetupGuideTitle')}>
+                      <Stack gap="xs">
+                        <Text size="sm">{t('projects.gitlabSetupGuideIntro')}</Text>
+                        <Group align="flex-end" gap="xs">
+                          <TextInput
+                            label={t('projects.gitlabWebhookUrl')}
+                            value={webhookUrl}
+                            readOnly
+                            style={{ flex: '1 1 360px' }}
+                          />
+                          <CopyButton value={webhookUrl}>
+                            {({ copied, copy }) => (
+                              <Button type="button" variant="light" onClick={copy}>
+                                {copied ? t('projects.webhookUrlCopied') : t('projects.copyWebhookUrl')}
+                              </Button>
+                            )}
+                          </CopyButton>
+                        </Group>
+                        <Text size="sm">{t('projects.gitlabWebhookSecretHelp')}</Text>
+                        <Text size="sm">{t('projects.gitlabWebhookEventsHelp')}</Text>
+                      </Stack>
+                    </Alert>
+                  ) : null}
+                </Stack>
               ) : null}
             </Stack>
 

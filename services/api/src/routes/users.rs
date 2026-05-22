@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
@@ -10,8 +12,8 @@ use uuid::Uuid;
 use crate::{
     dto::{
         CreateInvitationRequest, ManagedUserDto, UpdateUserAccessRequest, UpdateUserRequest,
-        UserAccessIssuePermissionRow, UserAccessOverviewDto, UserAccessProjectOptionDto,
-        UserAccessProjectPermissionRow, UserInvitationDto, UserInvitationRow,
+        UserAccessIssueOptionDto, UserAccessIssuePermissionRow, UserAccessOverviewDto,
+        UserAccessProjectOptionDto, UserAccessProjectPermissionRow, UserInvitationDto, UserInvitationRow,
         UserManagementOverviewDto, UserRow,
     },
     error::{internal_error, ApiError, ApiResult},
@@ -321,7 +323,13 @@ pub async fn get_user_access(
 
     let issue_permissions = sqlx::query_as::<_, UserAccessIssuePermissionRow>(
         r#"
-        SELECT ip.issue_id, i.title AS issue_title, p.name AS project_name, ip.permission
+        SELECT
+            ip.issue_id,
+            i.title AS issue_title,
+            COALESCE(i.gitlab_issue_iid, 0) AS gitlab_issue_iid,
+            p.id AS project_id,
+            p.name AS project_name,
+            ip.permission
         FROM issue_permissions ip
         JOIN issues i ON i.id = ip.issue_id
         JOIN projects p ON p.id = i.project_id
@@ -351,10 +359,37 @@ pub async fn get_user_access(
         .map(|(project_id, project_name)| UserAccessProjectOptionDto { project_id, project_name })
         .collect();
 
+    let available_issues = sqlx::query_as::<_, UserAccessIssueOptionDto>(
+        r#"
+        SELECT
+            i.id AS issue_id,
+            i.title AS issue_title,
+            COALESCE(i.gitlab_issue_iid, 0) AS gitlab_issue_iid,
+            p.id AS project_id,
+            p.name AS project_name
+        FROM issues i
+        JOIN projects p ON p.id = i.project_id
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM issue_permissions ip
+            WHERE ip.issue_id = i.id
+              AND ip.subject_type = 'user'
+              AND ip.subject_id = $1
+              AND ip.effect = 'allow'
+        )
+        ORDER BY p.name ASC, i.title ASC
+        "#,
+    )
+    .bind(user_id.to_string())
+    .fetch_all(state.pool.as_ref())
+    .await
+    .map_err(internal_error)?;
+
     Ok(Json(UserAccessOverviewDto {
         project_permissions,
         issue_permissions,
         available_projects,
+        available_issues,
     }))
 }
 
@@ -379,10 +414,93 @@ pub async fn update_user_access(
     }
 
     const PROJECT_PERMISSION_OPTIONS: &[&str] = &["view", "create_issue", "admin"];
+    const ISSUE_PERMISSION_OPTIONS: &[&str] = &["read", "comment", "edit", "admin"];
 
+    let mut seen_project_ids = HashSet::new();
     for entry in &request.project_permissions {
         if !PROJECT_PERMISSION_OPTIONS.contains(&entry.permission.as_str()) {
             return Err(ApiError::new(StatusCode::BAD_REQUEST, "Permission must be one of view, create_issue, admin"));
+        }
+
+        if !seen_project_ids.insert(entry.project_id) {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "Each project can only be assigned once per user",
+            ));
+        }
+    }
+
+    let mut seen_issue_ids = HashSet::new();
+    if let Some(issue_permissions) = &request.issue_permissions {
+        for entry in issue_permissions {
+            if !ISSUE_PERMISSION_OPTIONS.contains(&entry.permission.as_str()) {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "Permission must be one of read, comment, edit, admin",
+                ));
+            }
+
+            if !seen_issue_ids.insert(entry.issue_id) {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "Each issue can only be assigned once per user",
+                ));
+            }
+        }
+    }
+
+    let requested_project_ids = request
+        .project_permissions
+        .iter()
+        .map(|entry| entry.project_id)
+        .collect::<Vec<_>>();
+
+    if !requested_project_ids.is_empty() {
+        let matched_project_ids = sqlx::query_scalar::<_, Uuid>(
+            r#"
+            SELECT id
+            FROM projects
+            WHERE id = ANY($1)
+            "#,
+        )
+        .bind(&requested_project_ids)
+        .fetch_all(state.pool.as_ref())
+        .await
+        .map_err(internal_error)?;
+
+        if matched_project_ids.len() != requested_project_ids.len() {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "One or more selected projects do not exist",
+            ));
+        }
+    }
+
+    if let Some(issue_permissions) = &request.issue_permissions {
+        let requested_issue_ids = issue_permissions
+            .iter()
+            .map(|entry| entry.issue_id)
+            .collect::<Vec<_>>();
+
+        if !requested_issue_ids.is_empty() {
+            let matched_issue_ids = sqlx::query_scalar::<_, Uuid>(
+                r#"
+                SELECT id
+                FROM issues
+                WHERE id = ANY($1)
+                "#,
+            )
+            .bind(&requested_issue_ids)
+            .fetch_all(state.pool.as_ref())
+            .await
+            .map_err(internal_error)?;
+
+            if matched_issue_ids.len() != requested_issue_ids.len() {
+                return Err(ApiError::new(
+                    StatusCode::BAD_REQUEST,
+                    "One or more selected issues do not exist",
+                ));
+            }
         }
     }
 
@@ -413,6 +531,35 @@ pub async fn update_user_access(
         .execute(&mut *tx)
         .await
         .map_err(internal_error)?;
+    }
+
+    if let Some(issue_permissions) = &request.issue_permissions {
+        sqlx::query(
+            r#"
+            DELETE FROM issue_permissions
+            WHERE subject_type = 'user'
+              AND subject_id = $1
+            "#,
+        )
+        .bind(user_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(internal_error)?;
+
+        for entry in issue_permissions {
+            sqlx::query(
+                r#"
+                INSERT INTO issue_permissions (issue_id, subject_type, subject_id, permission, effect)
+                VALUES ($1, 'user', $2, $3, 'allow')
+                "#,
+            )
+            .bind(entry.issue_id)
+            .bind(user_id.to_string())
+            .bind(&entry.permission)
+            .execute(&mut *tx)
+            .await
+            .map_err(internal_error)?;
+        }
     }
 
     tx.commit().await.map_err(internal_error)?;
